@@ -700,16 +700,21 @@ def test_reruns_with_string_condition_with_global_var(testdir):
 @pytest.mark.parametrize(
     "marker_only_rerun,cli_only_rerun,should_rerun",
     [
+        # Regex strings
+        ('"AssertionError"', None, True),
+        ('"AssertionError: ERR"', None, True),
+        ('["AssertionError"]', None, True),
+        ('["AssertionError: ABC"]', None, False),
+        ('"ValueError"', None, False),
+        ('["ValueError"]', None, False),
+        ('["AssertionError", "ValueError"]', None, True),
+        # Types
         ("AssertionError", None, True),
-        ("AssertionError: ERR", None, True),
-        (["AssertionError"], None, True),
-        (["AssertionError: ABC"], None, False),
+        ("(AssertionError, ValueError)", None, True),
         ("ValueError", None, False),
-        (["ValueError"], None, False),
-        (["AssertionError", "ValueError"], None, True),
         # CLI override behavior
-        ("AssertionError", "ValueError", True),
-        ("ValueError", "AssertionError", False),
+        ('"AssertionError"', '"ValueError"', True),
+        ('"ValueError"', '"AssertionError"', False),
     ],
 )
 def test_only_rerun_flag_in_flaky_marker(
@@ -719,7 +724,7 @@ def test_only_rerun_flag_in_flaky_marker(
         f"""
         import pytest
 
-        @pytest.mark.flaky(reruns=1, only_rerun={marker_only_rerun!r})
+        @pytest.mark.flaky(reruns=1, only_rerun={marker_only_rerun})
         def test_fail():
             raise AssertionError("ERR")
         """
@@ -735,17 +740,22 @@ def test_only_rerun_flag_in_flaky_marker(
 @pytest.mark.parametrize(
     "marker_rerun_except,cli_rerun_except,should_rerun",
     [
+        # Regex strings
+        ('"AssertionError"', None, False),
+        ('"AssertionError: ERR"', None, False),
+        ('["AssertionError"]', None, False),
+        ('["AssertionError: ABC"]', None, True),
+        ('"ValueError"', None, True),
+        ('["ValueError"]', None, True),
+        ('["OSError", "ValueError"]', None, True),
+        ('["OSError", "AssertionError"]', None, False),
+        # Types
         ("AssertionError", None, False),
-        ("AssertionError: ERR", None, False),
-        (["AssertionError"], None, False),
-        (["AssertionError: ABC"], None, True),
+        ("(AssertionError, ValueError)", None, False),
         ("ValueError", None, True),
-        (["ValueError"], None, True),
-        (["OSError", "ValueError"], None, True),
-        (["OSError", "AssertionError"], None, False),
         # CLI override behavior
-        ("AssertionError", "ValueError", False),
-        ("ValueError", "AssertionError", True),
+        ('"AssertionError"', "ValueError", False),
+        ('"ValueError"', "AssertionError", True),
     ],
 )
 def test_rerun_except_flag_in_flaky_marker(
@@ -755,7 +765,7 @@ def test_rerun_except_flag_in_flaky_marker(
         f"""
         import pytest
 
-        @pytest.mark.flaky(reruns=1, rerun_except={marker_rerun_except!r})
+        @pytest.mark.flaky(reruns=1, rerun_except={marker_rerun_except})
         def test_fail():
             raise AssertionError("ERR")
         """

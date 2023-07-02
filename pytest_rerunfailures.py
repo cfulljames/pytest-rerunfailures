@@ -307,7 +307,7 @@ def _get_rerun_filter_regex(item, regex_name):
 
     if rerun_marker is not None and regex_name in rerun_marker.kwargs:
         regex = rerun_marker.kwargs[regex_name]
-        if isinstance(regex, str):
+        if isinstance(regex, (str, type)):
             regex = [regex]
     else:
         regex = getattr(item.session.config.option, regex_name)
@@ -315,21 +315,31 @@ def _get_rerun_filter_regex(item, regex_name):
     return regex
 
 
-def _matches_any_rerun_error(rerun_errors, report):
-    for rerun_regex in rerun_errors:
-        try:
-            if re.search(rerun_regex, report.longrepr.reprcrash.message):
+def _matches_any_rerun_error(rerun_errors, item, report):
+    excinfo = item._test_failed_excinfos[report.when]
+    for rerun_error in rerun_errors:
+        if isinstance(rerun_error, type):
+            if excinfo and isinstance(excinfo.value, rerun_error):
                 return True
-        except AttributeError:
-            if re.search(rerun_regex, report.longreprtext):
-                return True
+        else:
+            try:
+                if re.search(rerun_error, report.longrepr.reprcrash.message):
+                    return True
+            except AttributeError:
+                if re.search(rerun_error, report.longreprtext):
+                    return True
     return False
 
 
-def _matches_any_rerun_except_error(rerun_except_errors, report):
-    for rerun_regex in rerun_except_errors:
-        if re.search(rerun_regex, report.longrepr.reprcrash.message):
-            return True
+def _matches_any_rerun_except_error(rerun_except_errors, item, report):
+    excinfo = item._test_failed_excinfos[report.when]
+    for rerun_error in rerun_except_errors:
+        if isinstance(rerun_error, type):
+            if excinfo and isinstance(excinfo.value, rerun_error):
+                return True
+        else:
+            if re.search(rerun_error, report.longrepr.reprcrash.message):
+                return True
     return False
 
 
@@ -346,17 +356,17 @@ def _should_hard_fail_on_error(item, report):
 
     elif rerun_errors and (not rerun_except_errors):
         # Using --only-rerun but not --rerun-except
-        return not _matches_any_rerun_error(rerun_errors, report)
+        return not _matches_any_rerun_error(rerun_errors, item, report)
 
     elif (not rerun_errors) and rerun_except_errors:
         # Using --rerun-except but not --only-rerun
-        return _matches_any_rerun_except_error(rerun_except_errors, report)
+        return _matches_any_rerun_except_error(rerun_except_errors, item, report)
 
     else:
         # Using both --only-rerun and --rerun-except
-        matches_rerun_only = _matches_any_rerun_error(rerun_errors, report)
+        matches_rerun_only = _matches_any_rerun_error(rerun_errors, item, report)
         matches_rerun_except = _matches_any_rerun_except_error(
-            rerun_except_errors, report
+            rerun_except_errors, item, report
         )
         return (not matches_rerun_only) or matches_rerun_except
 
@@ -570,9 +580,14 @@ def pytest_runtest_makereport(item, call):
     if result.when == "setup":
         # clean failed statuses at the beginning of each test/rerun
         setattr(item, "_test_failed_statuses", {})
+        setattr(item, "_test_failed_excinfos", {})
     _test_failed_statuses = getattr(item, "_test_failed_statuses", {})
     _test_failed_statuses[result.when] = result.failed
     item._test_failed_statuses = _test_failed_statuses
+
+    _test_failed_excinfos = getattr(item, "_test_failed_excinfos", {})
+    _test_failed_excinfos[result.when] = call.excinfo
+    item._test_failed_excinfos = _test_failed_excinfos
 
 
 def pytest_runtest_protocol(item, nextitem):
