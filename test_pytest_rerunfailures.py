@@ -552,6 +552,34 @@ def test_only_rerun_flag(testdir, only_rerun_texts, should_rerun):
     )
 
 
+@pytest.mark.parametrize(
+    "only_rerun_types, should_rerun",
+    [
+        (["AssertionError"], True),
+        (["ValueError"], False),
+        (["AssertionError", "ValueError"], True),
+        # Invalid type names ignored
+        (["InvalidTypeName"], False),
+        (["AssertionError", "InvalidTypeName"], True),
+    ],
+)
+def test_only_rerun_type_flag(testdir, only_rerun_types, should_rerun):
+    testdir.makepyfile("def test_only_rerun(): assert False")
+
+    num_failed = 1
+    num_passed = 0
+    num_reruns = 1
+    num_reruns_actual = num_reruns if should_rerun else 0
+
+    pytest_args = ["--reruns", str(num_reruns)]
+    for only_rerun_type in only_rerun_types:
+        pytest_args.extend(["--only-rerun-type", only_rerun_type])
+    result = testdir.runpytest(*pytest_args)
+    assert_outcomes(
+        result, passed=num_passed, failed=num_failed, rerun=num_reruns_actual
+    )
+
+
 def test_no_rerun_on_strict_xfail_with_only_rerun_flag(testdir):
     testdir.makepyfile(
         """
@@ -589,6 +617,35 @@ def test_rerun_except_flag(testdir, rerun_except_texts, should_rerun):
     pytest_args = ["--reruns", str(num_reruns)]
     for rerun_except_text in rerun_except_texts:
         pytest_args.extend(["--rerun-except", rerun_except_text])
+    result = testdir.runpytest(*pytest_args)
+    assert_outcomes(
+        result, passed=num_passed, failed=num_failed, rerun=num_reruns_actual
+    )
+
+
+@pytest.mark.parametrize(
+    "rerun_except_types, should_rerun",
+    [
+        (["ValueError"], True),
+        (["AssertionError", "ValueError"], False),
+        (["AssertionError"], False),
+        # Invalid type names ignored
+        (["InvalidTypeName", "ValueError"], True),
+        (["InvalidTypeName", "AssertionError:"], True),
+        (["InvalidTypeName", "AssertionError"], False),
+    ],
+)
+def test_rerun_except_type_flag(testdir, rerun_except_types, should_rerun):
+    testdir.makepyfile("def test_rerun_except(): assert False")
+
+    num_failed = 1
+    num_passed = 0
+    num_reruns = 1
+    num_reruns_actual = num_reruns if should_rerun else 0
+
+    pytest_args = ["--reruns", str(num_reruns)]
+    for rerun_except_type in rerun_except_types:
+        pytest_args.extend(["--rerun-except-type", rerun_except_type])
     result = testdir.runpytest(*pytest_args)
     assert_outcomes(
         result, passed=num_passed, failed=num_failed, rerun=num_reruns_actual

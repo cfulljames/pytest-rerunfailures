@@ -81,6 +81,16 @@ def pytest_addoption(parser):
         "to match",
     )
     group._addoption(
+        "--only-rerun-type",
+        action="append",
+        dest="only_rerun_type",
+        type=str,
+        default=None,
+        help="If passed, only rerun errors of the given type. "
+        "Pass this flag multiple times to accumulate a list of types "
+        "to match",
+    )
+    group._addoption(
         "--reruns",
         action="store",
         dest="reruns",
@@ -103,6 +113,16 @@ def pytest_addoption(parser):
         help="If passed, only rerun errors other than matching the "
         "regex provided. Pass this flag multiple times to accumulate a list "
         "of regexes to match",
+    )
+    group._addoption(
+        "--rerun-except-type",
+        action="append",
+        dest="rerun_except_type",
+        type=str,
+        default=None,
+        help="If passed, only rerun errors other than matching the "
+        "type provided. Pass this flag multiple times to accumulate a list "
+        "of types to match",
     )
     arg_type = "string" if PYTEST_GTE_62 else None
     parser.addini("reruns", RERUNS_DESC, type=arg_type)
@@ -302,17 +322,31 @@ def _remove_failed_setup_state_from_session(item):
         setup_state.stack = []
 
 
-def _get_rerun_filter_regex(item, regex_name):
+def _get_rerun_filter_patterns(item, regex_name):
     rerun_marker = _get_marker(item)
 
     if rerun_marker is not None and regex_name in rerun_marker.kwargs:
-        regex = rerun_marker.kwargs[regex_name]
-        if isinstance(regex, (str, type)):
-            regex = [regex]
-    else:
-        regex = getattr(item.session.config.option, regex_name)
+        # Using @pytest.mark.flaky()
+        patterns = rerun_marker.kwargs[regex_name]
+        if isinstance(patterns, (str, type, re.Pattern)):
+            patterns = [patterns]
+        for index in range(len(patterns)):
+            pattern = patterns[index]
+            if isinstance(pattern, str):
+                patterns[index] = re.compile(pattern)
 
-    return regex
+    else:
+        # Using CLI arguments
+        patterns = []
+        regexes = getattr(item.session.config.option, regex_name)
+        if regexes is not None:
+            patterns.extend(re.compile(regex) for regex in regexes)
+
+        type_names = getattr(item.session.config.option, regex_name + "_type")
+        if type_names is not None:
+            patterns.extend(type_names)
+
+    return patterns
 
 
 def _matches_any_rerun_error(rerun_errors, item, report):
@@ -321,13 +355,16 @@ def _matches_any_rerun_error(rerun_errors, item, report):
         if isinstance(rerun_error, type):
             if excinfo and isinstance(excinfo.value, rerun_error):
                 return True
-        else:
+        elif isinstance(rerun_error, re.Pattern):
             try:
-                if re.search(rerun_error, report.longrepr.reprcrash.message):
+                if rerun_error.search(report.longrepr.reprcrash.message):
                     return True
             except AttributeError:
-                if re.search(rerun_error, report.longreprtext):
+                if rerun_error.search(report.longreprtext):
                     return True
+        else:
+            if excinfo and excinfo.typename == rerun_error:
+                return True
     return False
 
 
@@ -337,8 +374,11 @@ def _matches_any_rerun_except_error(rerun_except_errors, item, report):
         if isinstance(rerun_error, type):
             if excinfo and isinstance(excinfo.value, rerun_error):
                 return True
+        elif isinstance(rerun_error, re.Pattern):
+            if rerun_error.search(report.longrepr.reprcrash.message):
+                return True
         else:
-            if re.search(rerun_error, report.longrepr.reprcrash.message):
+            if excinfo and excinfo.typename == rerun_error:
                 return True
     return False
 
@@ -347,8 +387,8 @@ def _should_hard_fail_on_error(item, report):
     if report.outcome != "failed":
         return False
 
-    rerun_errors = _get_rerun_filter_regex(item, "only_rerun")
-    rerun_except_errors = _get_rerun_filter_regex(item, "rerun_except")
+    rerun_errors = _get_rerun_filter_patterns(item, "only_rerun")
+    rerun_except_errors = _get_rerun_filter_patterns(item, "rerun_except")
 
     if (not rerun_errors) and (not rerun_except_errors):
         # Using neither --only-rerun nor --rerun-except
