@@ -564,7 +564,7 @@ def test_only_rerun_flag(testdir, only_rerun_texts, should_rerun):
     ],
 )
 def test_only_rerun_type_flag(testdir, only_rerun_types, should_rerun):
-    testdir.makepyfile("def test_only_rerun(): assert False")
+    testdir.makepyfile("def test_only_rerun(): assert False, 'ValueError'")
 
     num_failed = 1
     num_passed = 0
@@ -636,7 +636,7 @@ def test_rerun_except_flag(testdir, rerun_except_texts, should_rerun):
     ],
 )
 def test_rerun_except_type_flag(testdir, rerun_except_types, should_rerun):
-    testdir.makepyfile("def test_rerun_except(): assert False")
+    testdir.makepyfile("def test_rerun_except(): assert False, 'ValueError'")
 
     num_failed = 1
     num_passed = 0
